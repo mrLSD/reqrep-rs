@@ -26,3 +26,7 @@ test:
 	@cargo test
 	@echo Done.
 
+deps:
+	@git clone --depth 1 https://github.com/nanomsg/nanomsg.git /tmp/nanomsg
+	@cd /tmp/nanomsg && mkdir build && cd build && cmake .. && cmake --build .
+	@cd /tmp/nanomsg/build && sudo cmake --build . --target install && sudo ldconfig --verbose
