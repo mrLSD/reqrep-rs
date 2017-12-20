@@ -1,29 +1,44 @@
 #![allow(unused_must_use)]
 
 extern crate nanomsg;
+extern crate serde;
+extern crate serde_json;
+#[macro_use] extern crate serde_derive;
 
 use nanomsg::{Socket, Protocol};
 
 use std::thread;
+use std::result;
 use std::time::Duration;
-
 use std::io::{Read, Write};
+use serde_json::{Value};
 
-const CLIENT_DEVICE_URL: &'static str = "ipc:///tmp/reqrep_example_front.ipc";
-const SERVER_DEVICE_URL: &'static str = "ipc:///tmp/reqrep_example_back.ipc";
+#[derive(Serialize, Deserialize)]
+struct User {
+    id: u32,
+    name: Value,
+}
+
+struct ServerSettings {
+    url: String,
+}
+
+const SERVER_URL: &'static str = "tcp://0.0.0.0:3040";
+
+pub type ServerResult = result::Result<(), nanomsg::Error>;
 
 fn client() {
     let mut socket = Socket::new(Protocol::Req).unwrap();
-    let mut endpoint = socket.connect(CLIENT_DEVICE_URL).unwrap();
+    let mut endpoint = socket.connect(SERVER_URL).unwrap();
     let mut count = 1u32;
 
     let mut reply = String::new();
 
     loop {
-        let request = format!("Request #{}", count);
+        let request = format!("{{ \"id\": {}, \"name\": \"Test\" }}", count);
 
         match socket.write_all(request.as_bytes()) {
-            Ok(..) => println!("Send '{}'.", request),
+            Ok(..) => println!("CLIENT SEND '{}'.", request),
             Err(err) => {
                 println!("Client failed to send request '{}'.", err);
                 break
@@ -32,7 +47,7 @@ fn client() {
 
         match socket.read_to_string(&mut reply) {
             Ok(_) => {
-                println!("Recv '{}'.", reply);
+                println!("CLIENT RECV '{}'.", reply);
                 reply.clear()
             },
             Err(err) => {
@@ -40,62 +55,41 @@ fn client() {
                 break
             }
         }
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(3000));
         count += 1;
     }
 
     endpoint.shutdown();
 }
 
-fn server() {
-    let mut socket = Socket::new(Protocol::Rep).unwrap();
-    let mut endpoint = socket.connect(SERVER_DEVICE_URL).unwrap();
-    let mut count = 1u32;
-
-    let mut request = String::new();
-
-    println!("Server is ready.");
-
+fn server() -> ServerResult {
+    let mut socket = Socket::new(Protocol::Rep)?;
+    socket.bind(SERVER_URL)?;
     loop {
-
-        match socket.read_to_string(&mut request) {
-            Ok(_) => {
-                println!("Recv '{}'.", request);
-
-                let reply = format!("{} -> Reply #{}", request, count);
-                match socket.write_all(reply.as_bytes()) {
-                    Ok(..) => println!("Sent '{}'.", reply),
-                    Err(err) => {
-                        println!("Server failed to send reply '{}'.", err);
-                        break
-                    }
-                }
-                request.clear();
-                thread::sleep(Duration::from_millis(400));
-                count += 1;
-            },
-            Err(err) => {
-                println!("Server failed to receive request '{}'.", err);
-                break
-            }
-        }
+        let mut msg = Vec::new();
+        socket.read_to_end(&mut msg)
+            .map_err(|err| format!("Error to read message: {}", err))
+            .and_then(|_| {
+                serde_json::from_slice(&msg[..])
+                    .map_err(|_| format!("Failed parse JSON from message"))
+            })
+            .and_then(|v: Value| {
+                let mut v1: User = serde_json::from_value(v).unwrap();
+                println!("ID: {} | Name: {}", v1.id, v1.name);
+                v1.id = 10;
+                serde_json::to_vec(&v1)
+                    .map_err(|_| format!("Failed parse to JSON"))
+            })
+            .map(|msg| {
+                socket.nb_write(&msg[..])
+                    .map_err(|err| format!("Error to send message: {}", err));
+            })
+            .map_err(log_error);
     }
-
-    endpoint.shutdown();
 }
 
-fn device() {
-    let mut front_socket = Socket::new_for_device(Protocol::Rep).unwrap();
-    let mut front_endpoint = front_socket.bind(CLIENT_DEVICE_URL).unwrap();
-    let mut back_socket = Socket::new_for_device(Protocol::Req).unwrap();
-    let mut back_endpoint = back_socket.bind(SERVER_DEVICE_URL).unwrap();
-
-    println!("Device is ready.");
-    Socket::device(&front_socket, &back_socket);
-    println!("Device is stopped.");
-
-    front_endpoint.shutdown();
-    back_endpoint.shutdown();
+fn log_error(err: String) {
+    println!("ERROR: {}", err);
 }
 
 fn usage() {
@@ -108,14 +102,21 @@ fn usage() {
 fn main() {
     let args: Vec<_> = std::env::args().collect();
 
-    if args.len() < 2 {
+    if args.len() < 3 {
         return usage()
     }
 
+    let mut ss: ServerSettings;
+
     match args[1].as_ref() {
         "client" => client(),
-        "server" => server(),
-        "device" => device(),
+        "server" => {
+            ss.url = args[2].to_owned();
+            match server() {
+                Err(err) => println!("Error: {}", err),
+                _ => ()
+            }
+        },
         _ => usage()
     }
 }

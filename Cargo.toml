@@ -4,4 +4,7 @@ version = "0.1.0"
 authors = ["Evgeny Ukhanov <mrlsd@ya.ru>"]
 
 [dependencies]
-nanomsg = "0.6.2"
+nanomsg = "0.6.*"
+serde = "1.*"
+serde_json = "1.*"
+serde_derive = "1.*"
