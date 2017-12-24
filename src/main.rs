@@ -19,17 +19,19 @@ struct User {
     name: Value,
 }
 
+trait ServerHandler {
+    fn handler(&self, msg: &Vec<u8>) -> result::Result<Vec<u8>, String>;
+}
+
 struct ServerSettings {
     url: String,
 }
 
-const SERVER_URL: &'static str = "tcp://0.0.0.0:3040";
-
 pub type ServerResult = result::Result<(), nanomsg::Error>;
 
-fn client() {
+fn client(config: &ServerSettings) {
     let mut socket = Socket::new(Protocol::Req).unwrap();
-    let mut endpoint = socket.connect(SERVER_URL).unwrap();
+    let mut endpoint = socket.connect(&config.url[..]).unwrap();
     let mut count = 1u32;
 
     let mut reply = String::new();
@@ -62,23 +64,15 @@ fn client() {
     endpoint.shutdown();
 }
 
-fn server() -> ServerResult {
+fn serve<T: ServerHandler>(config: &ServerSettings, h: &T) -> ServerResult {
     let mut socket = Socket::new(Protocol::Rep)?;
-    socket.bind(SERVER_URL)?;
+    socket.bind(&config.url[..])?;
     loop {
         let mut msg = Vec::new();
         socket.read_to_end(&mut msg)
             .map_err(|err| format!("Error to read message: {}", err))
             .and_then(|_| {
-                serde_json::from_slice(&msg[..])
-                    .map_err(|_| format!("Failed parse JSON from message"))
-            })
-            .and_then(|v: Value| {
-                let mut v1: User = serde_json::from_value(v).unwrap();
-                println!("ID: {} | Name: {}", v1.id, v1.name);
-                v1.id = 10;
-                serde_json::to_vec(&v1)
-                    .map_err(|_| format!("Failed parse to JSON"))
+                h.handler(&msg)
             })
             .map(|msg| {
                 socket.nb_write(&msg[..])
@@ -99,6 +93,22 @@ fn usage() {
     println!("  Don't forget to start the device !");
 }
 
+struct MyServerConfig;
+
+impl ServerHandler for MyServerConfig {
+    fn handler<'a>(&self, msg: &'a Vec<u8>) -> result::Result<Vec<u8>, String> {
+        serde_json::from_slice(&msg[..])
+            .map_err(|_| format!("Failed parse JSON from message"))
+            .and_then(|v: Value| {
+                let mut v1: User = serde_json::from_value(v).unwrap();
+                println!("ID: {} | Name: {}", v1.id, v1.name);
+                v1.id = 10;
+                serde_json::to_vec(&v1)
+                    .map_err(|_| format!("Failed parse to JSON"))
+            })
+    }
+}
+
 fn main() {
     let args: Vec<_> = std::env::args().collect();
 
@@ -106,13 +116,15 @@ fn main() {
         return usage()
     }
 
-    let mut ss: ServerSettings;
+    let cfg = ServerSettings{
+        url: args[2].to_owned(),
+    };
+    let handler = MyServerConfig;
 
     match args[1].as_ref() {
-        "client" => client(),
+        "client" => client(&cfg),
         "server" => {
-            ss.url = args[2].to_owned();
-            match server() {
+            match serve(&cfg, &handler) {
                 Err(err) => println!("Error: {}", err),
                 _ => ()
             }
