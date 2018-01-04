@@ -42,7 +42,7 @@ fn client(config: &ServerSettings) {
         match socket.write_all(request.as_bytes()) {
             Ok(..) => println!("CLIENT SEND '{}'.", request),
             Err(err) => {
-                println!("Client failed to send request '{}'.", err);
+                log_error("client.socket.write_all", err);
                 break
             }
         }
@@ -53,7 +53,7 @@ fn client(config: &ServerSettings) {
                 reply.clear()
             },
             Err(err) => {
-                println!("Client failed to receive reply '{}'.", err);
+                log_error("client.socket.read_to_string", err);
                 break
             }
         }
@@ -70,20 +70,20 @@ fn serve<T: ServerHandler>(config: &ServerSettings, h: &T) -> ServerResult {
     loop {
         let mut msg = Vec::new();
         socket.read_to_end(&mut msg)
-            .map_err(|err| format!("Error to read message: {}", err))
+            .map_err(|err| log_error("serve.socket.read_to_end", err))
             .and_then(|_| {
                 h.handler(&msg)
+                    .map_err(|err| log_error("serve.handler", err))
             })
             .map(|msg| {
                 socket.nb_write(&msg[..])
-                    .map_err(|err| format!("Error to send message: {}", err));
-            })
-            .map_err(log_error);
+                    .map_err(|err| log_error("serve.socket.nb_write", err));
+            });
     }
 }
 
-fn log_error(err: String) {
-    println!("ERROR: {}", err);
+fn log_error<T:std::fmt::Display>(event_name: &'static str, err: T) {
+    println!("[ERROR] {}: {}", event_name, err);
 }
 
 fn usage() {
@@ -96,7 +96,7 @@ fn usage() {
 struct MyServerConfig;
 
 impl ServerHandler for MyServerConfig {
-    fn handler<'a>(&self, msg: &'a Vec<u8>) -> result::Result<Vec<u8>, String> {
+    fn handler(&self, msg: &Vec<u8>) -> result::Result<Vec<u8>, String> {
         serde_json::from_slice(&msg[..])
             .map_err(|_| format!("Failed parse JSON from message"))
             .and_then(|v: Value| {
