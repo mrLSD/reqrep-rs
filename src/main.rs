@@ -3,6 +3,9 @@
 extern crate nanomsg;
 extern crate serde;
 extern crate serde_json;
+extern crate log4rs;
+extern crate reqrep;
+#[macro_use] extern crate log;
 #[macro_use] extern crate serde_derive;
 
 use nanomsg::{Socket, Protocol};
@@ -110,7 +113,13 @@ impl ServerHandler for MyServerConfig {
 }
 
 fn main() {
-    let args: Vec<_> = std::env::args().collect();
+    log4rs::init_file("config.yml", Default::default()).unwrap();
+    reqrep::ltst::test_log();
+    info!("booting up");
+    info!(target: "app::main", "booting up {}", 100);
+    warn!(target: "app::main", "booting up {}", 100);
+    warn!(target: "input_events", "booting up {}", 100);
+    /*let args: Vec<_> = std::env::args().collect();
 
     if args.len() < 3 {
         return usage()
@@ -130,6 +139,5 @@ fn main() {
             }
         },
         _ => usage()
-    }
+    }*/
 }
-
