@@ -22,73 +22,6 @@ struct User {
     name: Value,
 }
 
-trait ServerHandler {
-    fn handler(&self, msg: &Vec<u8>) -> result::Result<Vec<u8>, String>;
-}
-
-struct ServerSettings {
-    url: String,
-}
-
-pub type ServerResult = result::Result<(), nanomsg::Error>;
-
-fn client(config: &ServerSettings) {
-    let mut socket = Socket::new(Protocol::Req).unwrap();
-    let mut endpoint = socket.connect(&config.url[..]).unwrap();
-    let mut count = 1u32;
-
-    let mut reply = String::new();
-
-    loop {
-        let request = format!("{{ \"id\": {}, \"name\": \"Test\" }}", count);
-
-        match socket.write_all(request.as_bytes()) {
-            Ok(..) => println!("CLIENT SEND '{}'.", request),
-            Err(err) => {
-                log_error("client.socket.write_all", err);
-                break
-            }
-        }
-
-        match socket.read_to_string(&mut reply) {
-            Ok(_) => {
-                println!("CLIENT RECV '{}'.", reply);
-                reply.clear()
-            },
-            Err(err) => {
-                log_error("client.socket.read_to_string", err);
-                break
-            }
-        }
-        thread::sleep(Duration::from_millis(3000));
-        count += 1;
-    }
-
-    endpoint.shutdown();
-}
-
-fn serve<T: ServerHandler>(config: &ServerSettings, h: &T) -> ServerResult {
-    let mut socket = Socket::new(Protocol::Rep)?;
-    socket.bind(&config.url[..])?;
-    loop {
-        let mut msg = Vec::new();
-        socket.read_to_end(&mut msg)
-            .map_err(|err| log_error("serve.socket.read_to_end", err))
-            .and_then(|_| {
-                h.handler(&msg)
-                    .map_err(|err| log_error("serve.handler", err))
-            })
-            .map(|msg| {
-                socket.nb_write(&msg[..])
-                    .map_err(|err| log_error("serve.socket.nb_write", err));
-            });
-    }
-}
-
-fn log_error<T:std::fmt::Display>(event_name: &'static str, err: T) {
-    println!("[ERROR] {}: {}", event_name, err);
-}
-
 fn usage() {
     println!("Usage: reqrep [client|server|device]");
     println!("  Try running several clients and servers");
@@ -114,7 +47,7 @@ impl ServerHandler for MyServerConfig {
 
 fn main() {
     log4rs::init_file("config.yml", Default::default()).unwrap();
-    reqrep::ltst::test_log();
+    reqrep::reqrep::test_log();
     info!("booting up");
     info!(target: "app::main", "booting up {}", 100);
     warn!(target: "app::main", "booting up {}", 100);

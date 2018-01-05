@@ -17,14 +17,10 @@ appenders:
 
 # Set the default logging level to "warn" and attach the "stdout" appender to the root
 root:
-  level: warn
+  level: debug
   appenders:
     - stdout
 
 loggers:
-  # Raise the maximum log level for events sent to the "app::backend::db" logger to "info"
-  app::backend::db:
-    level: info
-
-  reqrep::ltst:
-    level: error
+  reqrep::reqrep:
+    level: trace
