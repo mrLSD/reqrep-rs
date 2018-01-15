@@ -1,56 +1,52 @@
+use nanomsg;
+use nanomsg::{Socket, Protocol};
+use std::io::{Read, Write};
+use std::result;
+
+pub struct ServerSettings<'a> {
+    pub url: &'a str,
+    pub name: &'a str,
+}
+
+pub type ServerResult = result::Result<(), nanomsg::Error>;
+pub type ClientResult = result::Result<String, nanomsg::Error>;
+
 pub trait ServerHandler {
     fn handler(&self, msg: &Vec<u8>) -> result::Result<Vec<u8>, String>;
 }
 
-pub struct ServerSettings {
-    url: String,
-    name: String,
-}
-
-pub type ServerResult = result::Result<(), nanomsg::Error>;
-
-fn send(config: &ServerSettings, message: &String) {
+pub fn send(config: &ServerSettings, message: &String) -> ClientResult {
     let mut socket = Socket::new(Protocol::Req).unwrap();
     let mut endpoint = socket.connect(&config.url[..]).unwrap();
 
     let mut reply = String::new();
 
-        match socket.write_all(message.as_bytes()) {
-            Ok(..) => println!("CLIENT SEND '{}'.", request),
-            Err(err) => {
-                log_error("client.socket.write_all", err);
-                break
-            }
-        }
+    socket.write_all(message.as_bytes())
+        .map_err(|err| { error!("socket.write_all: {}", err); err })
+        .and_then(|_| {
+            socket.read_to_string(&mut reply)
+                .map_err(|err| { error!("socket.read_to_string: {}", err); err })
+        })
+        .map_err(|err| { let _ = endpoint.shutdown(); err })?;
 
-        match socket.read_to_string(&mut reply) {
-            Ok(_) => {
-                println!("CLIENT RECV '{}'.", reply);
-                reply.clear()
-            },
-            Err(err) => {
-                log_error("client.socket.read_to_string", err);
-                break
-            }
-        }
-
-    endpoint.shutdown();
+    let _ = endpoint.shutdown();
+    return Ok(reply);
 }
 
-fn serve<T: ServerHandler>(config: &ServerSettings, h: &T) -> ServerResult {
+pub fn serve<T: ServerHandler>(config: &ServerSettings, h: &T) -> ServerResult {
     let mut socket = Socket::new(Protocol::Rep)?;
     socket.bind(&config.url[..])?;
     loop {
         let mut msg = Vec::new();
-        socket.read_to_end(&mut msg)
-            .map_err(|err| log_error("serve.socket.read_to_end", err))
+        let _ = socket.read_to_end(&mut msg)
+            .map_err(|err| error!("serve.socket.read_to_end: {}", err))
             .and_then(|_| {
                 h.handler(&msg)
-                    .map_err(|err| log_error("serve.handler", err))
+                    .map_err(|err| error!("serve.handler: {}", err))
             })
             .map(|msg| {
                 socket.nb_write(&msg[..])
-                    .map_err(|err| log_error("serve.socket.nb_write", err));
+                    .map_err(|err| error!("serve.socket.nb_write: {}", err))
             });
     }
 }

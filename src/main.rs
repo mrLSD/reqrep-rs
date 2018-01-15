@@ -2,18 +2,13 @@
 
 extern crate nanomsg;
 extern crate serde;
-extern crate serde_json;
 extern crate log4rs;
 extern crate reqrep;
 #[macro_use] extern crate log;
 #[macro_use] extern crate serde_derive;
+#[macro_use] extern crate serde_json;
 
-use nanomsg::{Socket, Protocol};
-
-use std::thread;
 use std::result;
-use std::time::Duration;
-use std::io::{Read, Write};
 use serde_json::{Value};
 
 #[derive(Serialize, Deserialize)]
@@ -31,7 +26,7 @@ fn usage() {
 
 struct MyServerConfig;
 
-impl ServerHandler for MyServerConfig {
+impl reqrep::reqrep::ServerHandler for MyServerConfig {
     fn handler(&self, msg: &Vec<u8>) -> result::Result<Vec<u8>, String> {
         serde_json::from_slice(&msg[..])
             .map_err(|_| format!("Failed parse JSON from message"))
@@ -47,30 +42,24 @@ impl ServerHandler for MyServerConfig {
 
 fn main() {
     log4rs::init_file("config.yml", Default::default()).unwrap();
-    reqrep::reqrep::test_log();
-    info!("booting up");
-    info!(target: "app::main", "booting up {}", 100);
-    warn!(target: "app::main", "booting up {}", 100);
-    warn!(target: "input_events", "booting up {}", 100);
-    /*let args: Vec<_> = std::env::args().collect();
+    info!("Starting REQREP");
+    let args: Vec<_> = std::env::args().collect();
 
     if args.len() < 3 {
         return usage()
     }
 
-    let cfg = ServerSettings{
-        url: args[2].to_owned(),
+    let cfg = reqrep::reqrep::ServerSettings{
+        url: &*args[2].to_owned(),
+        name: "broker-reqrep-test",
     };
     let handler = MyServerConfig;
 
+    let msg = json!({"id": 123}).to_string();
+
     match args[1].as_ref() {
-        "client" => client(&cfg),
-        "server" => {
-            match serve(&cfg, &handler) {
-                Err(err) => println!("Error: {}", err),
-                _ => ()
-            }
-        },
+        "client" => {reqrep::reqrep::send(&cfg, &msg);},
+        "server" => {reqrep::reqrep::serve(&cfg, &handler);},
         _ => usage()
-    }*/
+    }
 }
