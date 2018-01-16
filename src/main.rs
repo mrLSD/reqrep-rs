@@ -11,10 +11,10 @@ extern crate reqrep;
 use std::result;
 use serde_json::{Value};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct User {
     id: u32,
-    name: Value,
+    name: Option<Value>,
 }
 
 fn usage() {
@@ -28,14 +28,27 @@ struct MyServerConfig;
 
 impl reqrep::reqrep::ServerHandler for MyServerConfig {
     fn handler(&self, msg: &Vec<u8>) -> result::Result<Vec<u8>, String> {
+        debug!("reqrep.handler");
         serde_json::from_slice(&msg[..])
             .map_err(|_| format!("Failed parse JSON from message"))
             .and_then(|v: Value| {
-                let mut v1: User = serde_json::from_value(v).unwrap();
-                println!("ID: {} | Name: {}", v1.id, v1.name);
-                v1.id = 10;
-                serde_json::to_vec(&v1)
-                    .map_err(|_| format!("Failed parse to JSON"))
+                serde_json::from_value(v)
+                    .map_err(|err| {
+                        error!("reqrep.handler.serde_json::from_value: {}", err);
+                        err
+                    })
+                    .and_then(|value: User| {
+                        debug!("handler.incoming_json_value: {:?}", value);
+                        let mut val: User = value;
+                        val.id = 10;
+                        debug!("handler.response: {:?}", val);
+                        serde_json::to_vec(&val)
+                            .map_err(|err| {
+                                error!("reqrep.handler.serde_json::to_vec: {}", err);
+                                err
+                            })
+                    })
+                    .map_err(|err| format!("{}", err))
             })
     }
 }

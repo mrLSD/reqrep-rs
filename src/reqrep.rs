@@ -14,9 +14,11 @@ pub type ServeResult = result::Result<(), nanomsg::Error>;
 // Result type for Send
 pub type SendResult = result::Result<String, nanomsg::Error>;
 
+pub type HandlerResult = result::Result<Vec<u8>, String>;
+
 // Handler for server response
 pub trait ServerHandler {
-    fn handler(&self, msg: &Vec<u8>) -> result::Result<Vec<u8>, String>;
+    fn handler(&self, msg: &Vec<u8>) -> HandlerResult;
 }
 
 // Send event message
@@ -63,7 +65,7 @@ pub fn serve<T: ServerHandler>(config: &ServerSettings, h: &T) -> ServeResult {
                     .map_err(|err| error!("serve.handler: {}", err))
             })
             .map(|msg| {
-                debug!("serve.socket.read_to_end: {}", str::from_utf8(&msg).unwrap());
+                debug!("serve.socket.nb_write: {}", str::from_utf8(&msg).unwrap());
                 socket.nb_write(&msg[..])
                     .map_err(|err| error!("serve.socket.nb_write: {}", err))
             });
